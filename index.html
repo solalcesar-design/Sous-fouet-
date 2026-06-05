@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Fouet Dynamique</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        h1 { margin-bottom: 30px; }
+        select, button {
+            padding: 15px 20px;
+            font-size: 16px;
+            margin: 10px;
+            border-radius: 8px;
+            border: none;
+            width: 80%;
+            max-width: 300px;
+        }
+        select { background-color: #333; color: white; }
+        button {
+            background-color: #28a745;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:active { background-color: #218838; }
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>PWA Fouet Automatique 🤠</h1>
+
+    <label for="soundSelect">Choisis ton son :</label>
+    <select id="soundSelect">
+        <option value="">Chargement de la bibliothèque...</option>
+    </select>
+
+    <button id="startBtn">Activer le Fouet</button>
+
+    <div id="status">Connexion à GitHub...</div>
+
+    <script>
+        // === CONFIGURATION DE TON GITHUB ===
+        const GITHUB_USERNAME = "TON_PSEUDO"; // Mets ton pseudo GitHub ici
+        const GITHUB_REPO = "TON_NOM_DE_REPO";   // Mets le nom de ton dépôt ici
+        // ===================================
+
+        const startBtn = document.getElementById('startBtn');
+        const soundSelect = document.getElementById('soundSelect');
+        const statusDiv = document.getElementById('status');
+        
+        let audioContext = null;
+        let audioBuffer = null;
+
+        const SHAKE_THRESHOLD = 25; 
+        let lastX = 0, lastY = 0, lastZ = 0;
+        let lastTime = 0;
+
+        // 1. Récupérer automatiquement les sons via l'API GitHub
+        async function fetchAudioFiles() {
+            const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/`;
+            
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error("Impossible de lister le dépôt");
+                
+                const files = await response.json();
+                
+                // Vider le menu déroulant
+                soundSelect.innerHTML = "";
+
+                // Filtrer pour ne garder que le mp3, wav, ogg, m4a...
+                const audioFiles = files.filter(file => {
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    return ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
+                });
+
+                if (audioFiles.length === 0) {
+                    soundSelect.innerHTML = '<option>Aucun son trouvé</option>';
+                    statusDiv.textContent = "Ajoute des fichiers audio (.mp3, .wav) sur GitHub !";
+                    return;
+                }
+
+                // Ajouter les sons dans l'interface
+                audioFiles.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file.download_url; // L'URL raw directe est fournie par l'API
+                    // Nettoyer le nom pour l'affichage (ex: "mon_son.mp3" -> "mon_son")
+                    option.textContent = file.name.replace(/\.[^/.]+$/, "").replace(/
+      
