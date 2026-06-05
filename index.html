@@ -20,7 +20,7 @@
             box-sizing: border-box;
         }
         h1 { margin-bottom: 20px; }
-        select, button {
+        select, button, .slider-container {
             padding: 15px 20px;
             font-size: 16px;
             margin: 10px;
@@ -28,6 +28,7 @@
             border: none;
             width: 80%;
             max-width: 300px;
+            box-sizing: border-box;
         }
         select { background-color: #333; color: white; }
         button {
@@ -40,6 +41,24 @@
         button:active { background-color: #0056b3; }
         #startBtn { background-color: #28a745; }
         #startBtn:active { background-color: #218838; }
+        
+        /* Style de la zone de sensibilité */
+        .slider-container {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            text-align: left;
+        }
+        .slider-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        .slider-container input {
+            width: 100%;
+            cursor: pointer;
+        }
+        
         #status {
             margin-top: 20px;
             font-size: 14px;
@@ -58,6 +77,11 @@
         <option value="">Sélectionne un dossier d'abord...</option>
     </select>
 
+    <div class="slider-container">
+        <label for="sensitivitySlider">Sensibilité du mouvement : <b id="sensValue">Normale</b></label>
+        <input type="range" id="sensitivitySlider" min="30" max="180" value="100" step="5">
+    </div>
+
     <button id="startBtn" style="display: none;">Activer le Fouet</button>
 
     <div id="status">Clique sur le bouton dossier pour commencer.</div>
@@ -67,25 +91,42 @@
         const startBtn = document.getElementById('startBtn');
         const soundSelect = document.getElementById('soundSelect');
         const statusDiv = document.getElementById('status');
+        const sensitivitySlider = document.getElementById('sensitivitySlider');
+        const sensValueDisplay = document.getElementById('sensValue');
         
         let audioContext = null;
         let audioBuffer = null;
-        let localFiles = {}; // Stocke les fichiers trouvés : { "nom": FileObject }
+        let localFiles = {}; 
 
-        const SHAKE_THRESHOLD = 100; 
+        // Le seuil est désormais modifiable par le curseur
+        let shakeThreshold = 100; 
         let isPlaying = false; 
         let lastX = 0, lastY = 0, lastZ = 0;
 
+        // Écouter les changements du curseur pour mettre à jour la sensibilité
+        sensitivitySlider.addEventListener('input', () => {
+            shakeThreshold = parseInt(sensitivitySlider.value);
+            
+            // Affichage d'un texte simple pour aider l'utilisateur
+            if (shakeThreshold < 60) {
+                sensValueDisplay.textContent = "Très Sensible ⚡";
+            } else if (shakeThreshold <= 110) {
+                sensValueDisplay.textContent = "Normale 👍";
+            } else if (shakeThreshold <= 150) {
+                sensValueDisplay.textContent = "Ferme 💪";
+            } else {
+                sensValueDisplay.textContent = "Trés Forte 💥";
+            }
+        });
+
         // 1. Ouvrir le sélecteur de dossier Android
         folderBtn.addEventListener('click', async () => {
-            // Vérifier si le navigateur Android est compatible (Chrome, Edge, Opera mobile...)
             if ('showDirectoryPicker' in window) {
                 try {
                     const directoryHandle = await window.showDirectoryPicker();
                     soundSelect.innerHTML = "";
                     localFiles = {};
 
-                    // Parcourir les fichiers du dossier
                     for await (const entry of directoryHandle.values()) {
                         if (entry.kind === 'file') {
                             const ext = entry.name.split('.').pop().toLowerCase();
@@ -93,7 +134,6 @@
                                 const file = await entry.getFile();
                                 localFiles[entry.name] = file;
 
-                                // Ajouter au menu déroulant
                                 const option = document.createElement('option');
                                 option.value = entry.name;
                                 option.textContent = entry.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
@@ -109,8 +149,8 @@
 
                     soundSelect.disabled = false;
                     startBtn.style.display = 'inline-block';
-                    folderBtn.style.display = 'none'; // Cache le bouton dossier pour faire de la place
-                    statusDiv.textContent = "Dossier chargé ! Clique sur Activer le Fouet.";
+                    folderBtn.style.display = 'none'; 
+                    statusDiv.textContent = "Dossier chargé ! Ajuste ta sensibilité et clique sur Activer.";
 
                 } catch (err) {
                     statusDiv.textContent = "Accès au dossier annulé ou refusé.";
@@ -149,7 +189,6 @@
             source.start(0);
         }
 
-        // Changer de son dans la liste
         soundSelect.addEventListener('change', () => {
             if (audioContext && soundSelect.value) {
                 loadLocalSound(soundSelect.value);
@@ -180,7 +219,8 @@
                 let totalAcc = Math.abs(acc.x) + Math.abs(acc.y) + Math.abs(acc.z);
                 let diff = Math.abs(totalAcc - (Math.abs(lastX) + Math.abs(lastY) + Math.abs(lastZ)));
 
-                if (diff > SHAKE_THRESHOLD && !isPlaying) {
+                // Utilisation du seuil dynamique réglé par le curseur
+                if (diff > shakeThreshold && !isPlaying) {
                     playSound();
                 }
 
