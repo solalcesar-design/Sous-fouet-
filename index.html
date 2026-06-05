@@ -59,10 +59,9 @@
     <div id="status">Connexion à GitHub...</div>
 
     <script>
-        // === CONFIGURATION DE TON GITHUB ===
-        const GITHUB_USERNAME = "TON_PSEUDO"; // Mets ton pseudo GitHub ici
-        const GITHUB_REPO = "TON_NOM_DE_REPO";   // Mets le nom de ton dépôt ici
-        // ===================================
+        // CONFIGURATION DE TON GITHUB AUTOMATIQUE
+        const GITHUB_USERNAME = "solalcesar-design"; 
+        const GITHUB_REPO = "Sous-fouet-";   
 
         const startBtn = document.getElementById('startBtn');
         const soundSelect = document.getElementById('soundSelect');
@@ -71,11 +70,12 @@
         let audioContext = null;
         let audioBuffer = null;
 
+        // Sensibilité de la secousse (plus le chiffre est bas, plus c'est sensible)
         const SHAKE_THRESHOLD = 25; 
         let lastX = 0, lastY = 0, lastZ = 0;
         let lastTime = 0;
 
-        // 1. Récupérer automatiquement les sons via l'API GitHub
+        // 1. Récupérer automatiquement la liste des sons via l'API GitHub
         async function fetchAudioFiles() {
             const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/`;
             
@@ -85,25 +85,134 @@
                 
                 const files = await response.json();
                 
-                // Vider le menu déroulant
+                // Vide le menu de sélection
                 soundSelect.innerHTML = "";
 
-                // Filtrer pour ne garder que le mp3, wav, ogg, m4a...
+                // Filtre pour ne garder que le mp3 et le wav
                 const audioFiles = files.filter(file => {
                     const ext = file.name.split('.').pop().toLowerCase();
-                    return ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
+                    return ['mp3', 'wav'].includes(ext);
                 });
 
                 if (audioFiles.length === 0) {
                     soundSelect.innerHTML = '<option>Aucun son trouvé</option>';
-                    statusDiv.textContent = "Ajoute des fichiers audio (.mp3, .wav) sur GitHub !";
+                    statusDiv.textContent = "Ajoute des fichiers .mp3 ou .wav sur ton GitHub !";
                     return;
                 }
 
-                // Ajouter les sons dans l'interface
+                // Ajoute dynamiquement chaque fichier trouvé dans le menu déroulant
                 audioFiles.forEach(file => {
                     const option = document.createElement('option');
-                    option.value = file.download_url; // L'URL raw directe est fournie par l'API
-                    // Nettoyer le nom pour l'affichage (ex: "mon_son.mp3" -> "mon_son")
-                    option.textContent = file.name.replace(/\.[^/.]+$/, "").replace(/
-      
+                    option.value = file.download_url; // URL Raw directe fournie par GitHub
+                    // Nettoie le nom du fichier pour l'affichage (ex: "fouet_laser.mp3" -> "fouet laser")
+                    option.textContent = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+                    soundSelect.appendChild(option);
+                });
+
+                statusDiv.textContent = "Bibliothèque chargée. Clique sur Activer !";
+
+            } catch (error) {
+                statusDiv.textContent = "Erreur de connexion avec GitHub. Vérifie que le dépôt est bien Public.";
+                console.error(error);
+            }
+        }
+
+        // 2. Précharger le son sélectionné dans la mémoire (AudioBuffer) pour zéro latence
+        async function loadSound(url) {
+            if (!url) return;
+            statusDiv.textContent = "Chargement du son...";
+            try {
+                const response = await fetch(url);
+                const arrayBuffer = await response.arrayBuffer();
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                statusDiv.textContent = "Prêt ! Secoue ton téléphone !";
+            } catch (error) {
+                statusDiv.textContent = "Erreur pendant le chargement de ce son.";
+                console.error(error);
+            }
+        }
+
+        // Jouer le son de manière instantanée
+        function playSound() {
+            if (!audioContext || !audioBuffer) return;
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+        }
+
+        // Recharger le nouveau son quand on change d'option dans la liste
+        soundSelect.addEventListener('change', () => {
+            if (audioContext && soundSelect.value) {
+                loadSound(soundSelect.value);
+            }
+        });
+
+        // 3. Activer l'audio et demander les permissions de mouvement au clic
+        startBtn.addEventListener('click', async () => {
+            if (!soundSelect.value) {
+                statusDiv.textContent = "Attends que les sons chargent.";
+                return;
+            }
+
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            await loadSound(soundSelect.value);
+
+            // Gestion de la permission pour l'accéléromètre (Requis sur iOS/Safari)
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const permissionState = await DeviceMotionEvent.requestPermission();
+                    if (permissionState === 'granted') {
+                        startMotionDetection();
+                    } else {
+                        statusDiv.textContent = "Permission refusée.";
+                    }
+                } catch (error) {
+                    statusDiv.textContent = "Erreur d'accès aux capteurs.";
+                    console.error(error);
+                }
+            } else {
+                // Android et navigateurs standards
+                startMotionDetection();
+            }
+        });
+
+        // 4. Écouter les mouvements brusques
+        function startMotionDetection() {
+            window.addEventListener('devicemotion', (event) => {
+                let acc = event.accelerationIncludingGravity;
+                if (!acc) acc = event.acceleration;
+                if (!acc) return;
+
+                let currentTime = Date.now();
+                if ((currentTime - lastTime) > 100) {
+                    let diffTime = currentTime - lastTime;
+                    lastTime = currentTime;
+
+                    // Calcul de la secousse globale sur les 3 axes (X, Y, Z)
+                    let speed = Math.abs(acc.x + acc.y + acc.z - lastX - lastY - lastZ) / diffTime * 10000;
+
+                    if (speed > SHAKE_THRESHOLD) {
+                        playSound();
+                    }
+
+                    lastX = acc.x;
+                    lastY = acc.y;
+                    lastZ = acc.z;
+                }
+            });
+            startBtn.style.display = 'none'; // Masque le bouton d'activation
+        }
+
+        // Lancer la détection automatique au démarrage de la page
+        fetchAudioFiles();
+    </script>
+</body>
+</html>
