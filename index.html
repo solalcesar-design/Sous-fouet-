@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PWA Fouet Dynamique</title>
+    <title>PWA Fouet Maître</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -59,7 +59,7 @@
     <div id="status">Connexion à GitHub...</div>
 
     <script>
-        // CONFIGURATION DE TON GITHUB AUTOMATIQUE
+        // CONFIGURATION DU GITHUB AUTOMATIQUE
         const GITHUB_USERNAME = "solalcesar-design"; 
         const GITHUB_REPO = "Sous-fouet-";   
 
@@ -70,10 +70,11 @@
         let audioContext = null;
         let audioBuffer = null;
 
-        // Sensibilité de la secousse (plus le chiffre est bas, plus c'est sensible)
-        const SHAKE_THRESHOLD = 70; 
+        // SEUIL DE DÉTECTION (Augmente si c'est encore trop sensible)
+        const SHAKE_THRESHOLD = 100; 
+        let isPlaying = false; // Bloque le déclenchement si le son joue déjà
+        
         let lastX = 0, lastY = 0, lastZ = 0;
-        let lastTime = 0;
 
         // 1. Récupérer automatiquement la liste des sons via l'API GitHub
         async function fetchAudioFiles() {
@@ -100,11 +101,10 @@
                     return;
                 }
 
-                // Ajoute dynamiquement chaque fichier trouvé dans le menu déroulant
+                // Ajoute chaque fichier trouvé dans le menu déroulant
                 audioFiles.forEach(file => {
                     const option = document.createElement('option');
-                    option.value = file.download_url; // URL Raw directe fournie par GitHub
-                    // Nettoie le nom du fichier pour l'affichage (ex: "fouet_laser.mp3" -> "fouet laser")
+                    option.value = file.download_url; // URL Raw directe
                     option.textContent = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
                     soundSelect.appendChild(option);
                 });
@@ -112,12 +112,12 @@
                 statusDiv.textContent = "Bibliothèque chargée. Clique sur Activer !";
 
             } catch (error) {
-                statusDiv.textContent = "Erreur de connexion avec GitHub. Vérifie que le dépôt est bien Public.";
+                statusDiv.textContent = "Erreur. Vérifie que ton dépôt GitHub est bien Public.";
                 console.error(error);
             }
         }
 
-        // 2. Précharger le son sélectionné dans la mémoire (AudioBuffer) pour zéro latence
+        // 2. Précharger le son sélectionné pour éviter la latence
         async function loadSound(url) {
             if (!url) return;
             statusDiv.textContent = "Chargement du son...";
@@ -132,12 +132,21 @@
             }
         }
 
-        // Jouer le son de manière instantanée
+        // 3. Lecture du son sécurisée (Joue une seule fois jusqu'à la fin)
         function playSound() {
-            if (!audioContext || !audioBuffer) return;
+            if (isPlaying || !audioContext || !audioBuffer) return;
+            
+            isPlaying = true; // On verrouille
+            
             const source = audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
+            
+            // Libère le verrou uniquement quand le fichier audio a fini de jouer
+            source.onended = () => {
+                isPlaying = false;
+            };
+            
             source.start(0);
         }
 
@@ -148,10 +157,10 @@
             }
         });
 
-        // 3. Activer l'audio et demander les permissions de mouvement au clic
+        // 4. Activer l'audio et demander les permissions au clic
         startBtn.addEventListener('click', async () => {
             if (!soundSelect.value) {
-                statusDiv.textContent = "Attends que les sons chargent.";
+                statusDiv.textContent = "Attends le chargement des sons.";
                 return;
             }
 
@@ -165,7 +174,7 @@
 
             await loadSound(soundSelect.value);
 
-            // Gestion de la permission pour l'accéléromètre (Requis sur iOS/Safari)
+            // Gestion de la permission pour l'accéléromètre (iOS/Safari)
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     const permissionState = await DeviceMotionEvent.requestPermission();
@@ -179,39 +188,36 @@
                     console.error(error);
                 }
             } else {
-                // Android et navigateurs standards
+                // Android et PC de test
                 startMotionDetection();
             }
         });
 
-        // 4. Écouter les mouvements brusques
+        // 5. Écouter les mouvements du téléphone
         function startMotionDetection() {
             window.addEventListener('devicemotion', (event) => {
                 let acc = event.accelerationIncludingGravity;
-                if (!acc) acc = event.acceleration;
                 if (!acc) return;
 
-                let currentTime = Date.now();
-                if ((currentTime - lastTime) > 100) {
-                    let diffTime = currentTime - lastTime;
-                    lastTime = currentTime;
+                // Calcul du changement de mouvement global sur 3 axes
+                let totalAcc = Math.abs(acc.x) + Math.abs(acc.y) + Math.abs(acc.z);
+                let diff = Math.abs(totalAcc - (Math.abs(lastX) + Math.abs(lastY) + Math.abs(lastZ)));
 
-                    // Calcul de la secousse globale sur les 3 axes (X, Y, Z)
-                    let speed = Math.abs(acc.x + acc.y + acc.z - lastX - lastY - lastZ) / diffTime * 10000;
-
-                    if (speed > SHAKE_THRESHOLD) {
-                        playSound();
-                    }
-
-                    lastX = acc.x;
-                    lastY = acc.y;
-                    lastZ = acc.z;
+                // Si le coup est sec, franc et qu'aucun son ne joue déjà
+                if (diff > SHAKE_THRESHOLD && !isPlaying) {
+                    playSound();
                 }
+
+                lastX = acc.x;
+                lastY = acc.y;
+                lastZ = acc.z;
             });
-            startBtn.style.display = 'none'; // Masque le bouton d'activation
+            
+            // Cache uniquement le bouton d'activation, le menu reste dispo !
+            startBtn.style.display = 'none';
         }
 
-        // Lancer la détection automatique au démarrage de la page
+        // Lancer la détection automatique au démarrage
         fetchAudioFiles();
     </script>
 </body>
