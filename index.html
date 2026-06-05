@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PWA Fouet Maître</title>
+    <title>PWA Fouet Local</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -19,7 +19,7 @@
             height: 100vh;
             box-sizing: border-box;
         }
-        h1 { margin-bottom: 30px; }
+        h1 { margin-bottom: 20px; }
         select, button {
             padding: 15px 20px;
             font-size: 16px;
@@ -31,13 +31,15 @@
         }
         select { background-color: #333; color: white; }
         button {
-            background-color: #28a745;
+            background-color: #007bff;
             color: white;
             font-weight: bold;
             cursor: pointer;
             transition: background 0.2s;
         }
-        button:active { background-color: #218838; }
+        button:active { background-color: #0056b3; }
+        #startBtn { background-color: #28a745; }
+        #startBtn:active { background-color: #218838; }
         #status {
             margin-top: 20px;
             font-size: 14px;
@@ -47,178 +49,145 @@
 </head>
 <body>
 
-    <h1>PWA Fouet Automatique 🤠</h1>
+    <h1>PWA Fouet Local 🤖</h1>
 
-    <label for="soundSelect">Choisis ton son :</label>
-    <select id="soundSelect">
-        <option value="">Chargement de la bibliothèque...</option>
+    <button id="folderBtn">📁 Sélectionner le dossier des sons</button>
+
+    <label for="soundSelect" style="margin-top: 15px;">Choisis ton son :</label>
+    <select id="soundSelect" disabled>
+        <option value="">Sélectionne un dossier d'abord...</option>
     </select>
 
-    <button id="startBtn">Activer le Fouet</button>
+    <button id="startBtn" style="display: none;">Activer le Fouet</button>
 
-    <div id="status">Connexion à GitHub...</div>
+    <div id="status">Clique sur le bouton dossier pour commencer.</div>
 
     <script>
-        // CONFIGURATION DU GITHUB AUTOMATIQUE
-        const GITHUB_USERNAME = "solalcesar-design"; 
-        const GITHUB_REPO = "Sous-fouet-";   
-
+        const folderBtn = document.getElementById('folderBtn');
         const startBtn = document.getElementById('startBtn');
         const soundSelect = document.getElementById('soundSelect');
         const statusDiv = document.getElementById('status');
         
         let audioContext = null;
         let audioBuffer = null;
+        let localFiles = {}; // Stocke les fichiers trouvés : { "nom": FileObject }
 
-        // SEUIL DE DÉTECTION (Augmente si c'est encore trop sensible)
         const SHAKE_THRESHOLD = 100; 
-        let isPlaying = false; // Bloque le déclenchement si le son joue déjà
-        
+        let isPlaying = false; 
         let lastX = 0, lastY = 0, lastZ = 0;
 
-        // 1. Récupérer automatiquement la liste des sons via l'API GitHub
-        async function fetchAudioFiles() {
-            const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/`;
-            
-            try {
-                const response = await fetch(apiUrl);
-                if (!response.ok) throw new Error("Impossible de lister le dépôt");
-                
-                const files = await response.json();
-                
-                // Vide le menu de sélection
-                soundSelect.innerHTML = "";
+        // 1. Ouvrir le sélecteur de dossier Android
+        folderBtn.addEventListener('click', async () => {
+            // Vérifier si le navigateur Android est compatible (Chrome, Edge, Opera mobile...)
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const directoryHandle = await window.showDirectoryPicker();
+                    soundSelect.innerHTML = "";
+                    localFiles = {};
 
-                // Filtre pour ne garder que le mp3 et le wav
-                const audioFiles = files.filter(file => {
-                    const ext = file.name.split('.').pop().toLowerCase();
-                    return ['mp3', 'wav'].includes(ext);
-                });
+                    // Parcourir les fichiers du dossier
+                    for await (const entry of directoryHandle.values()) {
+                        if (entry.kind === 'file') {
+                            const ext = entry.name.split('.').pop().toLowerCase();
+                            if (['mp3', 'wav'].includes(ext)) {
+                                const file = await entry.getFile();
+                                localFiles[entry.name] = file;
 
-                if (audioFiles.length === 0) {
-                    soundSelect.innerHTML = '<option>Aucun son trouvé</option>';
-                    statusDiv.textContent = "Ajoute des fichiers .mp3 ou .wav sur ton GitHub !";
-                    return;
+                                // Ajouter au menu déroulant
+                                const option = document.createElement('option');
+                                option.value = entry.name;
+                                option.textContent = entry.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+                                soundSelect.appendChild(option);
+                            }
+                        }
+                    }
+
+                    if (Object.keys(localFiles).length === 0) {
+                        statusDiv.textContent = "Aucun fichier .mp3 ou .wav trouvé dans ce dossier.";
+                        return;
+                    }
+
+                    soundSelect.disabled = false;
+                    startBtn.style.display = 'inline-block';
+                    folderBtn.style.display = 'none'; // Cache le bouton dossier pour faire de la place
+                    statusDiv.textContent = "Dossier chargé ! Clique sur Activer le Fouet.";
+
+                } catch (err) {
+                    statusDiv.textContent = "Accès au dossier annulé ou refusé.";
+                    console.error(err);
                 }
-
-                // Ajoute chaque fichier trouvé dans le menu déroulant
-                audioFiles.forEach(file => {
-                    const option = document.createElement('option');
-                    option.value = file.download_url; // URL Raw directe
-                    option.textContent = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
-                    soundSelect.appendChild(option);
-                });
-
-                statusDiv.textContent = "Bibliothèque chargée. Clique sur Activer !";
-
-            } catch (error) {
-                statusDiv.textContent = "Erreur. Vérifie que ton dépôt GitHub est bien Public.";
-                console.error(error);
+            } else {
+                alert("Désolé, ton navigateur Android ne prend pas en charge l'accès aux dossiers. Utilise Google Chrome.");
             }
-        }
+        });
 
-        // 2. Précharger le son sélectionné pour éviter la latence
-        async function loadSound(url) {
-            if (!url) return;
+        // 2. Charger le fichier local en mémoire
+        async function loadLocalSound(fileName) {
+            const file = localFiles[fileName];
+            if (!file) return;
+
             statusDiv.textContent = "Chargement du son...";
             try {
-                const response = await fetch(url);
-                const arrayBuffer = await response.arrayBuffer();
+                const arrayBuffer = await file.arrayBuffer();
                 audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 statusDiv.textContent = "Prêt ! Secoue ton téléphone !";
             } catch (error) {
-                statusDiv.textContent = "Erreur pendant le chargement de ce son.";
+                statusDiv.textContent = "Erreur de lecture du fichier audio.";
                 console.error(error);
             }
         }
 
-        // 3. Lecture du son sécurisée (Joue une seule fois jusqu'à la fin)
+        // 3. Jouer le son
         function playSound() {
             if (isPlaying || !audioContext || !audioBuffer) return;
-            
-            isPlaying = true; // On verrouille
+            isPlaying = true;
             
             const source = audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
-            
-            // Libère le verrou uniquement quand le fichier audio a fini de jouer
-            source.onended = () => {
-                isPlaying = false;
-            };
-            
+            source.onended = () => { isPlaying = false; };
             source.start(0);
         }
 
-        // Recharger le nouveau son quand on change d'option dans la liste
+        // Changer de son dans la liste
         soundSelect.addEventListener('change', () => {
             if (audioContext && soundSelect.value) {
-                loadSound(soundSelect.value);
+                loadLocalSound(soundSelect.value);
             }
         });
 
-        // 4. Activer l'audio et demander les permissions au clic
+        // 4. Activer l'audio et les mouvements au clic
         startBtn.addEventListener('click', async () => {
-            if (!soundSelect.value) {
-                statusDiv.textContent = "Attends le chargement des sons.";
-                return;
-            }
+            if (!soundSelect.value) return;
 
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
-            
             if (audioContext.state === 'suspended') {
                 await audioContext.resume();
             }
 
-            await loadSound(soundSelect.value);
-
-            // Gestion de la permission pour l'accéléromètre (iOS/Safari)
-            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                try {
-                    const permissionState = await DeviceMotionEvent.requestPermission();
-                    if (permissionState === 'granted') {
-                        startMotionDetection();
-                    } else {
-                        statusDiv.textContent = "Permission refusée.";
-                    }
-                } catch (error) {
-                    statusDiv.textContent = "Erreur d'accès aux capteurs.";
-                    console.error(error);
-                }
-            } else {
-                // Android et PC de test
-                startMotionDetection();
-            }
+            await loadLocalSound(soundSelect.value);
+            startMotionDetection();
         });
 
-        // 5. Écouter les mouvements du téléphone
+        // 5. Détecter le mouvement du fouet
         function startMotionDetection() {
             window.addEventListener('devicemotion', (event) => {
                 let acc = event.accelerationIncludingGravity;
                 if (!acc) return;
 
-                // Calcul du changement de mouvement global sur 3 axes
                 let totalAcc = Math.abs(acc.x) + Math.abs(acc.y) + Math.abs(acc.z);
                 let diff = Math.abs(totalAcc - (Math.abs(lastX) + Math.abs(lastY) + Math.abs(lastZ)));
 
-                // Si le coup est sec, franc et qu'aucun son ne joue déjà
                 if (diff > SHAKE_THRESHOLD && !isPlaying) {
                     playSound();
                 }
 
-                lastX = acc.x;
-                lastY = acc.y;
-                lastZ = acc.z;
+                lastX = acc.x; lastY = acc.y; lastZ = acc.z;
             });
-            
-            // Cache uniquement le bouton d'activation, le menu reste dispo !
             startBtn.style.display = 'none';
         }
-
-        // Lancer la détection automatique au démarrage
-        fetchAudioFiles();
     </script>
 </body>
 </html>
